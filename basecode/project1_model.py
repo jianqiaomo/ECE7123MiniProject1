@@ -17,12 +17,12 @@ def count_parameters(model):
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, in_planes, planes, stride=1):
+    def __init__(self, in_planes, planes, stride=1, kernelsize=3, SkipConnectionKernelSize=1):
         super(BasicBlock, self).__init__()
         self.conv1 = nn.Conv2d(
-            in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+            in_planes, planes, kernel_size=kernelsize, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=kernelsize,
                                stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
 
@@ -30,7 +30,7 @@ class BasicBlock(nn.Module):
         if stride != 1 or in_planes != self.expansion*planes:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_planes, self.expansion*planes,
-                          kernel_size=1, stride=stride, bias=False),
+                          kernel_size=SkipConnectionKernelSize, stride=stride, bias=False),
                 nn.BatchNorm2d(self.expansion*planes)
             )
 
@@ -74,24 +74,28 @@ class Bottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=10):
+    def __init__(self, block, num_blocks, num_classes=10,
+                 AveragePKernelSize=4, Channel=(64,128,256,512),
+                 ConvKernelSize=(3,3,3,3),
+                 SkipKernelSize=(1,1,1,1)):
         super(ResNet, self).__init__()
-        self.in_planes = 64
+        self.in_planes = Channel[0]
 
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3,
+        self.conv1 = nn.Conv2d(3, Channel[0], kernel_size=ConvKernelSize[0],
                                stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
-        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+        self.layer1 = self._make_layer(block, Channel[0], num_blocks[0], 1, ConvKernelSize[0], SkipKernelSize[0])
+        self.layer2 = self._make_layer(block, Channel[1], num_blocks[1], 2, ConvKernelSize[1], SkipKernelSize[1])
+        self.layer3 = self._make_layer(block, Channel[2], num_blocks[2], 2, ConvKernelSize[2], SkipKernelSize[2])
+        self.layer4 = self._make_layer(block, Channel[3], num_blocks[3], 2, ConvKernelSize[3], SkipKernelSize[3])
+        self.avgpool = nn.AvgPool2d(AveragePKernelSize, stride=1)
         self.linear = nn.Linear(512*block.expansion, num_classes)
 
-    def _make_layer(self, block, planes, num_blocks, stride):
+    def _make_layer(self, block, planes, num_blocks, stride, ConvKSize, SkipKSize):
         strides = [stride] + [1]*(num_blocks-1)
         layers = []
         for stride in strides:
-            layers.append(block(self.in_planes, planes, stride))
+            layers.append(block(self.in_planes, planes, stride, ConvKSize, SkipKSize))
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
@@ -101,42 +105,34 @@ class ResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
-        out = F.avg_pool2d(out, 4)
+        out = self.avgpool(out)  # out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
         out = self.linear(out)
         return out
 
+def BuildBasicModelWithParameter(Bi=(2, 2, 2, 2), Ci=(64,128,256,512), Fi=(3,3,3,3), Ki=(1,1,1,1), P=4):
+    return ResNet(BasicBlock,
+                  num_blocks=Bi,
+                  Channel=Ci,
+                  ConvKernelSize=Fi,
+                  SkipKernelSize=Ki,
+                  AveragePKernelSize=P)
 
 def ResNet18():
-    return ResNet(BasicBlock, [2, 2, 2, 2])
+    # return ResNet(BasicBlock, [2, 2, 2, 2])
+    return BuildBasicModelWithParameter((2, 2, 2, 2), (64,128,256,512), (3,3,3,3), (1,1,1,1), 4)
 
 
 def ResNet34():
-    return ResNet(BasicBlock, [3, 4, 6, 3])
+    # return ResNet(BasicBlock, [3, 4, 6, 3])
+    return BuildBasicModelWithParameter((3, 4, 6, 3), (64,128,256,512), (3,3,3,3), (1,1,1,1), 4)
 
-
-def ResNet50():
-    return ResNet(Bottleneck, [3, 4, 6, 3])
-
-
-def ResNet101():
-    return ResNet(Bottleneck, [3, 4, 23, 3])
-
-
-def ResNet152():
-    return ResNet(Bottleneck, [3, 8, 36, 3])
 
 def BuildNet(N):
     if N == 18:
         return ResNet18()
     elif N == 34:
         return ResNet34()
-    elif N == 50:
-        return ResNet50()
-    elif N == 101:
-        return ResNet101()
-    elif N == 152:
-        return ResNet152()
     else:
         raise Exception("No such model Resnet %d" %N)
 
@@ -263,9 +259,11 @@ if __name__ == '__main__':
         best_acc = checkpoint['acc']
         start_epoch = checkpoint['epoch']
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss().to(device)
     optimizer = optim.SGD(net.parameters(), lr=args.lr,
-                          momentum=0.9, weight_decay=5e-4)
+                          momentum=0.9,
+                          weight_decay=0.0001  # weight_decay=5e-4
+                          )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
     for epoch in range(start_epoch, start_epoch + args.epoch):
