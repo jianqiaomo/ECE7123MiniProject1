@@ -83,13 +83,13 @@ class ResNet(nn.Module):
 
         self.conv1 = nn.Conv2d(3, Channel[0], kernel_size=ConvKernelSize[0],
                                stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
+        self.bn1 = nn.BatchNorm2d(Channel[0])
         self.layer1 = self._make_layer(block, Channel[0], num_blocks[0], 1, ConvKernelSize[0], SkipKernelSize[0])
         self.layer2 = self._make_layer(block, Channel[1], num_blocks[1], 2, ConvKernelSize[1], SkipKernelSize[1])
         self.layer3 = self._make_layer(block, Channel[2], num_blocks[2], 2, ConvKernelSize[2], SkipKernelSize[2])
         self.layer4 = self._make_layer(block, Channel[3], num_blocks[3], 2, ConvKernelSize[3], SkipKernelSize[3])
         self.avgpool = nn.AvgPool2d(AveragePKernelSize, stride=1)
-        self.linear = nn.Linear(512*block.expansion, num_classes)
+        self.linear = nn.Linear(Channel[3]*((4-AveragePKernelSize+1)**2)*block.expansion, num_classes)
 
     def _make_layer(self, block, planes, num_blocks, stride, ConvKSize, SkipKSize):
         strides = [stride] + [1]*(num_blocks-1)
@@ -100,14 +100,14 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = self.avgpool(out)  # out = F.avg_pool2d(out, 4)
-        out = out.view(out.size(0), -1)
-        out = self.linear(out)
+        out = F.relu(self.bn1(self.conv1(x)))  # (32, 32) = (32, 32)
+        out = self.layer1(out)  # (32, 32) = (32, 32)
+        out = self.layer2(out)  # (16, 16) = (32, 32)
+        out = self.layer3(out)  # (8, 8) = (16, 16)
+        out = self.layer4(out)  # (4, 4) = (8, 8)
+        out = self.avgpool(out)  # 64, 512, (1, 1) = (4, 4)  # out = F.avg_pool2d(out, 4)
+        out = out.view(out.size(0), -1)  # (64, 512) = (64, 512, 1, 1)
+        out = self.linear(out)  # (64, 10) = (64, 512)
         return out
 
 def BuildBasicModelWithParameter(Bi=(2, 2, 2, 2), Ci=(64,128,256,512), Fi=(3,3,3,3), Ki=(1,1,1,1), P=4):
