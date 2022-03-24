@@ -29,7 +29,7 @@ python3 project1_model.py --model 5 # trains ResNet-14-CL-2
 
 
 ```
-By default, without specifying <tt>epoch</tt> and <tt>lr</tt>, the script will use default values for training (<tt>epoch = 200, lr = 0.1</tt>). 
+Without specifying <tt>epoch</tt> and <tt>lr</tt>, the script will use default values for training (<tt>epoch = 200, lr = 0.1</tt>). 
 You can also add or change the parameters as Mini Project 1 required in 
 the parameter list of <tt>BuildBasicModelWithParameter()</tt> functions inside <tt>BuildNet()</tt>. 
 
