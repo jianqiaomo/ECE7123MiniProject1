@@ -153,11 +153,12 @@ def BuildNet():
     elif args.model == 5: # ResNet-14-CL-2
         return BuildBasicModelWithParameter((2,2,2), (64,128,256), (3,3,3), (1,1,1), 8, False)
     else:
-        raise Exception("No such model ResNet %d" %N)
+        raise Exception("No such model ResNet")
 
 
 def project1_model():
-    return torch.nn.DataParallel(BuildBasicModelWithParameter((2,2,2), (64,128,256), (3,3,3), (1,1,1), 8))
+    return torch.nn.DataParallel(ResNet3Layer(BasicBlock, num_blocks=(2,2,2), Channel=(64,128,256), 
+        ConvKernelSize=(3,3,3), SkipKernelSize=(1,1,1), AveragePKernelSize=8, dropout=False))
 
 def parse_args():
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
